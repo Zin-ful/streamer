@@ -12,12 +12,36 @@
 
 char *html_header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
 
+struct RequestData {
+    char method[16];
+    char filepath[128];
+    char misc[64]; //unsure yet
+};
+
 void clear_buffer(char buffer[], int size) {
     int i;
     for (i = 0; i != size; i++) {
         buffer[i] = 0;
     }
     printf("Set %d bytes to 0\n", i);
+}
+
+int string_find_position(char *string1, char *string2) {
+    char *result = strstr(string1, string2);
+    if (!result) {
+        return 0;
+    }
+    int pos = result - string1;
+    return pos;
+}
+
+int string_find_path(char *string, char path[]) {
+    int pos = string_find_position(string, "/");
+    int i = 0;
+    for (pos; string[pos] != ' '; pos++) {
+        path[i] = string[pos];
+    }
+    printf("Found path: %s\n", path);
 }
 
 void html_head(int socket) {
@@ -42,15 +66,35 @@ void send_html(char *new_path, int socket) {
     close(socket);
 }
 
+void parse_request(char *request, struct RequestData data) {
+    printf("Parsing request\n");
+    char *method;
+    if (strstr(request, "GET /")) {
+        method = "GET";    
+    } else if (strstr(request, "POST")) {
+        method = "POST";
+    } else {
+        method = "UNKNOWN";
+    }
+
+    char path[128] = {0};
+    string_find_path(request, path);
+    strcpy(data.filepath, path);
+    strcpy(data.method, method);
+    printf("Request parsed.\nMethod: %s\nRequested file: %s\n", data.method, data.filepath);
+}
+
 void *client(void *new_socket) {
     int socket = *(int *)new_socket;
     char buffer[BUFFER] = {0};
     read(socket, buffer, BUFFER);
     printf("\n------------REQUEST--------\n\n%s\n-----------------------\n", buffer);
+    struct RequestData request;
+    parse_request(buffer, request);
+    
     send_html("index", socket);
     printf("Client disconnected\n");
     return NULL;
-    
 }
 
 int main(void) {
