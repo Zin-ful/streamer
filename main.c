@@ -15,7 +15,9 @@ char *html_header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
 struct RequestData {
     char method[16];
     char filepath[128];
-    char misc[64]; //unsure yet
+    char search[64];
+    char catagory[18];
+    char sort[16];
 };
 
 void clear_buffer(char buffer[], int size) {
@@ -35,14 +37,73 @@ int string_find_position(char *string1, char *string2) {
     return pos;
 }
 
-int string_find_path(char *string, char path[]) {
+void extract_parameters(char *parameters) {
+    if (strlen(parameters) > 1) {
+        if (parameters[1] != '?') {
+            printf("No arguments in search\n");
+            return;
+        }
+    } else {
+        printf("No arguments in search\n");
+        return;
+    }
+    printf("Getting search\n");
+    int amount = 1;
+    int i;
+    for (int i = 0; i < strlen(parameters) - 1; i++){
+        if (parameters[i] == '&') {
+            amount++;
+        }
+    }
+    printf("Arguments: %d\n", amount);
+    char *parameter = parameters;
+    char search[64] = {0};
+    char catagory[18] = {0};
+    char sort[16] = {0};
+    i = 9;
+    parameter = parameter + i;
+    if (!parameter[0]) {
+        printf("Search all, no other arguments\n");
+        search[0] = '*';
+        search[1] = '\0';
+    } else {
+        for (i = 0; parameter[i] != '&'; i++){
+            search[i] = parameter[i]; 
+    
+        }
+        search[i++] = '\0';
+        amount--;
+        parameter = parameter + i;
+        if (amount) {
+            for (i = 0; parameter[i] != '&' && parameter[i] != ' '; i++){
+                catagory[i] = parameter[i]; 
+            }
+            catagory[i++] = '\0';
+        }
+        amount--;
+        parameter = parameter + i;
+        if (amount) {
+            for (i = 0; parameter[i] != '&' && parameter[i] != ' '; i++){
+                sort[i] = parameter[i]; 
+            }
+            sort[i++] = '\0';
+        }
+
+        printf("Search: %s\nCatagory: %s\nSort: %s\n", search, catagory, sort);
+    }
+}
+
+void string_find_path(char *string, char path[]) {
     int pos = string_find_position(string, "/");
     int i = 0;
-    for (pos; string[pos] != ' '; pos++) {
-        path[i] = string[pos];
+    for (; string[pos] != ' '; pos++) {
+        path[i++] = string[pos];
     }
+    path[i] = '\0';
     printf("Found path: %s\n", path);
 }
+
+
 
 void html_head(int socket) {
     send(socket, html_header, strlen(html_header), 0);
@@ -81,6 +142,7 @@ void parse_request(char *request, struct RequestData data) {
     string_find_path(request, path);
     strcpy(data.filepath, path);
     strcpy(data.method, method);
+    extract_parameters(data.filepath);
     printf("Request parsed.\nMethod: %s\nRequested file: %s\n", data.method, data.filepath);
 }
 
