@@ -28,14 +28,6 @@ void clear_buffer(char buffer[], int size) {
     printf("Set %d bytes to 0\n", i);
 }
 
-int string_find_position(char *string1, char *string2) {
-    char *result = strstr(string1, string2);
-    if (!result) {
-        return 0;
-    }
-    int pos = result - string1;
-    return pos;
-}
 
 void extract_parameters(char *parameters) {
     if (strlen(parameters) > 1) {
@@ -93,6 +85,16 @@ void extract_parameters(char *parameters) {
     }
 }
 
+
+int string_find_position(char *string1, char *string2) {
+    char *result = strstr(string1, string2);
+    if (!result) {
+        return 0;
+    }
+    int pos = result - string1;
+    return pos;
+}
+
 void string_find_path(char *string, char path[]) {
     int pos = string_find_position(string, "/");
     int i = 0;
@@ -101,12 +103,6 @@ void string_find_path(char *string, char path[]) {
     }
     path[i] = '\0';
     printf("Found path: %s\n", path);
-}
-
-
-
-void html_head(int socket) {
-    send(socket, html_header, strlen(html_header), 0);
 }
 
 void send_html(char *new_path, int socket) {
@@ -119,7 +115,7 @@ void send_html(char *new_path, int socket) {
     int size = ftell(file);
     fseek(file, 0L, SEEK_SET);
     char html[size];
-    html_head(socket);
+    send(socket, html_header, strlen(html_header), 0);
     while (fgets(html, sizeof(html), file)) {
         send(socket, html, strlen(html), 0);
     }
