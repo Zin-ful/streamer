@@ -59,29 +59,53 @@ void extract_parameters(char *parameters) {
         search[0] = '*';
         search[1] = '\0';
     } else {
-        for (i = 0; parameter[i] != '&'; i++){
+        
+        for (i = 0; parameter[i] != '&' && parameter[i] != ' ' && parameter[i] != '\0'; i++){
             search[i] = parameter[i]; 
-    
         }
-        search[i++] = '\0';
-        amount--;
+        search[i] = '\0';
+        printf("Search: %s\n", search);
+        
         parameter = parameter + i;
+        amount--;
         if (amount) {
-            for (i = 0; parameter[i] != '&' && parameter[i] != ' '; i++){
+            for (i = 0; parameter[i] != '&' && parameter[i] != ' ' && parameter[i] != '\0'; i++){
                 catagory[i] = parameter[i]; 
             }
-            catagory[i++] = '\0';
+            catagory[i] = '\0';
+            printf("Catagory: %s\n", catagory);
+            
+            parameter = parameter + i;
+            amount--;            
         }
-        amount--;
-        parameter = parameter + i;
+        
         if (amount) {
-            for (i = 0; parameter[i] != '&' && parameter[i] != ' '; i++){
+            for (i = 0; parameter[i] != '&' && parameter[i] != ' ' && parameter[i] != '\0'; i++){
                 sort[i] = parameter[i]; 
             }
-            sort[i++] = '\0';
+            sort[i] = '\0';
+            printf("Sort: %s\n", sort);
+            
+            amount--;
         }
 
-        printf("Search: %s\nCatagory: %s\nSort: %s\n", search, catagory, sort);
+        if (!search[0]) {
+            search[0] = '*';
+            search[1] = '\0';
+            printf("Search: %s\n", search);
+        }
+
+        if (!catagory[0]) {
+            catagory[0] = '*';
+            catagory[1] = '\0';
+            printf("Catagory: %s\n", catagory);
+        }
+
+        if (!sort[0]) {
+            sort[0] = '*';
+            sort[1] = '\0';
+            printf("Sort: %s\n", sort);
+        }
     }
 }
 
