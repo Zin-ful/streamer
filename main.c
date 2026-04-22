@@ -29,7 +29,7 @@ void clear_buffer(char buffer[], int size) {
 }
 
 
-void extract_parameters(char *parameters) {
+void extract_parameters(char *parameters, char search[], char catagory[], char sort[]) {
     if (strlen(parameters) > 1) {
         if (parameters[1] != '?') {
             printf("No arguments in search\n");
@@ -49,9 +49,6 @@ void extract_parameters(char *parameters) {
     }
     printf("Arguments: %d\n", amount);
     char *parameter = parameters;
-    char search[64] = {0};
-    char catagory[18] = {0};
-    char sort[16] = {0};
     i = 9;
     parameter = parameter + i;
     if (!parameter[0]) {
@@ -66,11 +63,11 @@ void extract_parameters(char *parameters) {
         search[i] = '\0';
         printf("Search: %s\n", search);
         
-        parameter = parameter + i;
+        parameter = parameter + i + 8;
         amount--;
         if (amount) {
             for (i = 0; parameter[i] != '&' && parameter[i] != ' ' && parameter[i] != '\0'; i++){
-                catagory[i] = parameter[i]; 
+                catagory[i] = parameter[i];
             }
             catagory[i] = '\0';
             printf("Catagory: %s\n", catagory);
@@ -151,18 +148,14 @@ void parse_request(char *request, struct RequestData data) {
     printf("Parsing request\n");
     char *method;
     if (strstr(request, "GET /")) {
-        method = "GET";    
+        strcpy(data.method, "GET");
     } else if (strstr(request, "POST")) {
-        method = "POST";
+        strcpy(data.method, "POST");
     } else {
-        method = "UNKNOWN";
+        strcpy(data.method, "UNKNOWN");
     }
-
-    char path[128] = {0};
-    string_find_path(request, path);
-    strcpy(data.filepath, path);
-    strcpy(data.method, method);
-    extract_parameters(data.filepath);
+    string_find_path(request, data.filepath);
+    extract_parameters(data.filepath, data.search, data.catagory, data.sort);
     printf("Request parsed.\nMethod: %s\nRequested file: %s\n", data.method, data.filepath);
 }
 
@@ -171,7 +164,7 @@ void *client(void *new_socket) {
     char buffer[BUFFER] = {0};
     read(socket, buffer, BUFFER);
     printf("\n------------REQUEST--------\n\n%s\n-----------------------\n", buffer);
-    struct RequestData request;
+    struct RequestData request = {{0}, {0}, {0}, {0}, {0}};
     parse_request(buffer, request);
     
     send_html("index", socket);
