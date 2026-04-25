@@ -15,6 +15,7 @@ char *html_header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
 struct RequestData {
     char method[16];
     char filepath[128];
+    char filetype[16];
     char search[64];
     char catagory[18];
     char sort[16];
@@ -32,14 +33,11 @@ void clear_buffer(char buffer[], int size) {
 void extract_parameters(char *parameters, char search[], char catagory[], char sort[]) {
     if (strlen(parameters) > 1) {
         if (parameters[1] != '?') {
-            printf("No arguments in search\n");
             return;
         }
     } else {
-        printf("No arguments in search\n");
         return;
     }
-    printf("Getting search\n");
     int amount = 1;
     int i;
     for (int i = 0; i < strlen(parameters) - 1; i++){
@@ -47,12 +45,10 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
             amount++;
         }
     }
-    printf("Arguments: %d\n", amount);
     char *parameter = parameters;
     i = 9;
     parameter = parameter + i;
     if (!parameter[0]) {
-        printf("Search all, no other arguments\n");
         search[0] = '*';
         search[1] = '\0';
     } else {
@@ -61,8 +57,6 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
             search[i] = parameter[i]; 
         }
         search[i] = '\0';
-        printf("Search: %s\n", search);
-        
         parameter = parameter + i + 8;
         amount--;
         if (amount) {
@@ -70,8 +64,6 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
                 catagory[i] = parameter[i];
             }
             catagory[i] = '\0';
-            printf("Catagory: %s\n", catagory);
-            
             parameter = parameter + i;
             amount--;            
         }
@@ -80,28 +72,23 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
             for (i = 0; parameter[i] != '&' && parameter[i] != ' ' && parameter[i] != '\0'; i++){
                 sort[i] = parameter[i]; 
             }
-            sort[i] = '\0';
-            printf("Sort: %s\n", sort);
-            
+            sort[i] = '\0';           
             amount--;
         }
 
         if (!search[0]) {
             search[0] = '*';
             search[1] = '\0';
-            printf("Search: %s\n", search);
         }
 
         if (!catagory[0]) {
             catagory[0] = '*';
             catagory[1] = '\0';
-            printf("Catagory: %s\n", catagory);
         }
 
         if (!sort[0]) {
             sort[0] = '*';
             sort[1] = '\0';
-            printf("Sort: %s\n", sort);
         }
     }
 }
@@ -123,40 +110,77 @@ void string_find_path(char *string, char path[]) {
         path[i++] = string[pos];
     }
     path[i] = '\0';
-    printf("Found path: %s\n", path);
 }
 
-void send_html(char *new_path, int socket) {
-    char path[128];
-    snprintf(path, sizeof(path), "%s.html", new_path);
-    
+void fof(int socket) {
+    char *header = "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n";    
+    send(socket, header, strlen(header), 0);
+    char *page = 
+    "<!DOCTYPE html><html lang='en'>"
+    "<body style='background-color:black;'>"
+    "<h1 style='color:white';><a style='color:white'; href='/'>Streamer</a></h1>"
+    "<h2 style='color:white';> This is not the page you were looking for.. ooooooohhhhh</h2>"
+    "</body>"
+    "</html>";
+    send(socket, page, strlen(page), 0); 
+    close(socket);
+}
+
+void send_html(char *path, int socket) {
     FILE *file = fopen(path, "r");
-   
+    if (!file) {
+        printf("File not found. Sending 404\n");
+        fof(socket);
+        return;
+    }
     fseek(file, 0L, SEEK_END);
     int size = ftell(file);
     fseek(file, 0L, SEEK_SET);
+
     char html[size];
     send(socket, html_header, strlen(html_header), 0);
+
     while (fgets(html, sizeof(html), file)) {
         send(socket, html, strlen(html), 0);
     }
+
     fclose(file);
     close(socket);
 }
 
-void parse_request(char *request, struct RequestData data) {
-    printf("Parsing request\n");
-    char *method;
+void parse_request(char *request, struct RequestData *data) {
     if (strstr(request, "GET /")) {
-        strcpy(data.method, "GET");
+        strcpy(data->method, "GET");
     } else if (strstr(request, "POST")) {
-        strcpy(data.method, "POST");
+        strcpy(data->method, "POST");
     } else {
-        strcpy(data.method, "UNKNOWN");
+        strcpy(data->method, "UNKNOWN");
     }
-    string_find_path(request, data.filepath);
-    extract_parameters(data.filepath, data.search, data.catagory, data.sort);
-    printf("Request parsed.\nMethod: %s\nRequested file: %s\n", data.method, data.filepath);
+
+    string_find_path(request, data->filepath);
+    
+    
+    if (strstr(data->filepath, ".mp4")) {
+        strcpy(data->filetype, ".mp4");
+    } else if (strstr(data->filepath, ".mkv")) {
+        strcpy(data->filetype, ".mkv");
+    } else if (strstr(data->filepath, ".html") || strstr(request, "GET / ")) {
+        strcpy(data->filetype, ".html");
+    } else if (!strstr(data->filepath, ".") && !strstr(data->filepath, "=")) {
+        strcpy(data->filetype, "folder");
+    } else if (strstr(data->filepath, "=")) {
+        strcpy(data->filetype, "function");
+    } else {
+        strcpy(data->filetype, "unknown");
+    }
+
+    extract_parameters(data->filepath, data->search, data->catagory, data->sort);
+    if (strcmp(data->filepath, "/") == 0) {
+        strcpy(data->filepath, "index.html");
+    } else {
+        char *path = data->filepath;
+        strcpy (data->filepath, path + 1);
+    }
 }
 
 void *client(void *new_socket) {
@@ -164,10 +188,17 @@ void *client(void *new_socket) {
     char buffer[BUFFER] = {0};
     read(socket, buffer, BUFFER);
     printf("\n------------REQUEST--------\n\n%s\n-----------------------\n", buffer);
-    struct RequestData request = {{0}, {0}, {0}, {0}, {0}};
-    parse_request(buffer, request);
-    
-    send_html("index", socket);
+    struct RequestData request = {{0}, {0}, {0}, {0}, {0}, {0}};
+    parse_request(buffer, &request);
+    if (request.search[0]) {
+        printf("Client is searching for %s in the catagory of %s. Sorting bias: %s\n", request.search, request.catagory, request.sort);
+    } else {
+        printf("Client request file %s via %s of type %s\n", request.method, request.filepath, request.filetype);
+    }
+    if (strcmp(request.filetype, ".html") == 0) {
+        printf("Request is html, sending %s\n", request.filepath);
+        send_html(request.filepath, socket);
+    }
     printf("Client disconnected\n");
     return NULL;
 }
