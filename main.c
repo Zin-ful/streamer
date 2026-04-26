@@ -33,6 +33,10 @@ struct RequestData {
     char sort[16];
 };
 
+void send_video(int socket, char *path) {
+    printf("Preparing video\n");
+}
+
 int count_backslash(char *string) {
     int count = 1;
     for (int i = 0; string[i] != '\0'; i++) {
@@ -54,6 +58,12 @@ char *isolate_filename(char *name) {
     return name + i;
 }
 
+int count_char(char *string) {
+    int i;
+    for (i = 0; string[i] != '\0'; i++);
+    return i;
+}
+
 void search(char *search, char files[MEDIA_AMNT][MEDIA_LENGTH], char result[PAGE_SIZE]) {
     printf("Searching...\n");
     
@@ -62,14 +72,21 @@ void search(char *search, char files[MEDIA_AMNT][MEDIA_LENGTH], char result[PAGE
     "<body style='background-color:black;'>\n"
     "<h1 style='color:white';><a style='color:white'; href='/'>Streamer</a></h1>\n";
     strcpy(result, page_start);
+    
+    int len = count_char(result);
+    
     for (int i = 0; files[i][0] != 0; i++) {
-        if (strstr(files[i], search)) {
+        if (strstr(files[i], search) || search[0] == '*') {
             strcat(result, "<p style='color:white';><a style='color:white'; href='");
             strcat(result, files[i]);
             strcat(result, "'>");
             strcat(result, isolate_filename(files[i]));
             strcat(result, "</a></p>\n");
         }
+    }
+
+    if (len == count_char(result)) {
+        strcat(result, "<p style='color:white';>No files with that name found! (Check spelling or capitalization).</p>\n");         
     }
 
     char *page_end =
@@ -98,12 +115,6 @@ void get_files(char directories[DIR_AMNT][DIR_LENGTH], char files[MEDIA_AMNT][ME
         }
     }
     printf("Counted %d media\n", count);
-
-    printf("\n(DEBUG - disable later!!) Verifying content of listed media\n\n");
-    for (int j = 0; j < count; j++) {
-        printf("%d. %s\n", j, files[j]);
-    }
-
 }
 
 void get_directories(char directories[DIR_AMNT][DIR_LENGTH]) {
@@ -136,12 +147,6 @@ void get_directories(char directories[DIR_AMNT][DIR_LENGTH]) {
             i++;
         }
     }
-    
-    printf("\n(DEBUG - disable later!!) Verifying content of listed directories\n\n");
-    for (int j = 0; j < i; j++) {
-        printf("%d. %s\n", j, directories[j]);
-    }
-
     closedir(movies);
     closedir(tv);
 }
@@ -183,7 +188,7 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
     }
     int amount = 1;
     int i;
-    for (int i = 0; i < strlen(parameters) - 1; i++){
+    for (size_t i = 0; i < strlen(parameters) - 1; i++){
         if (parameters[i] == '&') {
             amount++;
         }
@@ -194,6 +199,10 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
     if (!parameter[0]) {
         search[0] = '*';
         search[1] = '\0';
+        catagory[0] = '*';
+        catagory[1] = '\0';
+        sort[0] = '*';
+        sort[1] = '\0';
     } else {
         
         for (i = 0; parameter[i] != '&' && parameter[i] != ' ' && parameter[i] != '\0'; i++){
@@ -223,7 +232,7 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
             search[0] = '*';
             search[1] = '\0';
         }
-
+        
         if (!catagory[0]) {
             catagory[0] = '*';
             catagory[1] = '\0';
@@ -286,7 +295,7 @@ void fof(int socket) {
     close(socket);
 }
 
-void send_html(char *path, int socket) {
+void send_page(char *path, int socket) {
     FILE *file = fopen(path, "r");
     if (!file) {
         printf("File not found. Sending 404\n");
@@ -308,6 +317,12 @@ void send_html(char *path, int socket) {
     close(socket);
 }
 
+void send_custom_page(int socket, char *page) {
+    send(socket, html_header, strlen(html_header), 0);
+    send(socket, page, strlen(page), 0);
+    close(socket);    
+}
+
 void *client(void *new_socket) {
     int socket = *(int *)new_socket;
     char buffer[BUFFER] = {0};
@@ -319,16 +334,26 @@ void *client(void *new_socket) {
     parse_request(buffer, &request);
     
     if (request.search[0]) {
-        printf("Client is searching for %s in the catagory of %s. Sorting bias: %s\n", request.search, request.catagory, request.sort);
+        printf("Client is searching for %s in the catagory of %s with a sorting criteria of: %s\n", request.search, request.catagory, request.sort);
         
-        //char directories[24][32];
-        //get_directories(directories);
+        char files[MEDIA_AMNT][MEDIA_LENGTH] = {0};
+        char directories[DIR_AMNT][DIR_LENGTH] = {0};
+        char page[PAGE_SIZE] = {0};
+
+        get_directories(directories);
+        get_files(directories, files);
+        search(request.search, files, page);
+        
+        send_custom_page(socket, page);
     } else {
-        printf("Client request file %s via %s of type %s\n", request.method, request.filepath, request.filetype);
+        printf("Client is requesting the file %s via the %s method with a filetype of %s\n", request.filepath, request.method, request.filetype);
         
-        if (strcmp(request.filetype, ".html") == 0) {
-            printf("Request is html, sending %s\n", request.filepath);
-            send_html(request.filepath, socket);
+        if (strcmp(request.filetype, ".html") == 0 || strcmp(request.filetype, ".txt") == 0) {
+            printf("Request is for webpages, sending %s\n", request.filepath);
+            send_page(request.filepath, socket);
+        } elif (strcmp(request.filetype, ".mp4") == 0 || strcmp(request.filetype, ".mkv") == 0){
+            printf("Request is for videos, sending %s\n", request.filepath);
+            send_video(socket, request.filepath);
         }
     }
     
@@ -337,16 +362,6 @@ void *client(void *new_socket) {
 }
 
 int main(void) {
-    char files[MEDIA_AMNT][MEDIA_LENGTH] = {0};
-    char directories[DIR_AMNT][DIR_LENGTH] = {0};
-    char page[PAGE_SIZE] = {0};
-    
-    get_directories(directories);
-    get_files(directories, files);
-    search("in", files, page);
-    
-    printf("\n(DEBUG - disable later!!) Verifying content of created html page\n\n%s\n\n", page);
-
     printf("Root directory: %s\nListening port: %d\n", ROOT, PORT);
     pthread_t thread;
     int client_socket, server;
