@@ -5,10 +5,20 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <string.h>
+#include <dirent.h>
+
 
 #define ROOT "./"
 #define PORT 8080
 #define BUFFER 4096
+
+#define DIR_AMNT 24
+#define DIR_LENGTH 32
+
+
+#define MEDIA_AMNT 8128
+#define MEDIA_LENGTH 512
+
 
 char *html_header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
 
@@ -21,12 +31,81 @@ struct RequestData {
     char sort[16];
 };
 
+void get_files(char directories[DIR_AMNT][DIR_LENGTH], char files[MEDIA_AMNT][MEDIA_LENGTH]) {
+    struct dirent *entry;
+    int count = 0;
+    DIR *media;
+    for (i < 0; directories[i][0] != 0; i++) {
+        *media = opendir(directories[i])
+        while ((entry = readdir(media)) != NULL) {
+            strcpy(files[count], entry->d_name);
+            count++;
+        }
+    }
+    printf("Read %d files\n", count);
+}
+
+void get_directories(char directories[DIR_AMNT][DIR_LENGTH]) {
+    printf("Listing directories\n");
+    struct dirent *mov_entry;
+    struct dirent *tv_entry;
+    
+    DIR *movies = opendir("./media/movies");
+    DIR *tv = opendir("./media/tv");
+    
+    if (!tv) {
+        printf("Couldnt find directory\n");
+    }
+    if (!movies) {
+        printf("Couldnt find directory\n");
+    }
+    int i = 0;
+    while ((mov_entry = readdir(movies)) != NULL) {
+        if (mov_entry->d_name[0] != '.') {
+            strcpy(directories[i], mov_entry->d_name);
+            i++;
+        }
+    }
+    while ((tv_entry = readdir(tv)) != NULL) {
+        if (tv_entry->d_name[0] != '.') {
+            strcpy(directories[i], tv_entry->d_name);
+            i++;
+        }
+    }
+    
+    printf("Verifying content of listed directories\n");
+    for (int j = 0; j < i; j++) {
+        printf("%d. %s\n", j, directories[j]);
+    }
+
+    closedir(movies);
+    closedir(tv);
+}
+
 void clear_buffer(char buffer[], int size) {
     int i;
     for (i = 0; i != size; i++) {
         buffer[i] = 0;
     }
     printf("Set %d bytes to 0\n", i);
+}
+
+int string_find_position(char *string1, char *string2) {
+    char *result = strstr(string1, string2);
+    if (!result) {
+        return 0;
+    }
+    int pos = result - string1;
+    return pos;
+}
+
+void string_find_path(char *string, char path[]) {
+    int pos = string_find_position(string, "/");
+    int i = 0;
+    for (; string[pos] != ' '; pos++) {
+        path[i++] = string[pos];
+    }
+    path[i] = '\0';
 }
 
 
@@ -94,22 +173,39 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
 }
 
 
-int string_find_position(char *string1, char *string2) {
-    char *result = strstr(string1, string2);
-    if (!result) {
-        return 0;
+void parse_request(char *request, struct RequestData *data) {
+    if (strstr(request, "GET /")) {
+        strcpy(data->method, "GET");
+    } else if (strstr(request, "POST")) {
+        strcpy(data->method, "POST");
+    } else {
+        strcpy(data->method, "UNKNOWN");
     }
-    int pos = result - string1;
-    return pos;
-}
 
-void string_find_path(char *string, char path[]) {
-    int pos = string_find_position(string, "/");
-    int i = 0;
-    for (; string[pos] != ' '; pos++) {
-        path[i++] = string[pos];
+    string_find_path(request, data->filepath);
+    
+    
+    if (strstr(data->filepath, ".mp4")) {
+        strcpy(data->filetype, ".mp4");
+    } else if (strstr(data->filepath, ".mkv")) {
+        strcpy(data->filetype, ".mkv");
+    } else if (strstr(data->filepath, ".html") || strstr(request, "GET / ")) {
+        strcpy(data->filetype, ".html");
+    } else if (!strstr(data->filepath, ".") && !strstr(data->filepath, "=")) {
+        strcpy(data->filetype, "folder");
+    } else if (strstr(data->filepath, "=")) {
+        strcpy(data->filetype, "function");
+    } else {
+        strcpy(data->filetype, "unknown");
     }
-    path[i] = '\0';
+
+    extract_parameters(data->filepath, data->search, data->catagory, data->sort);
+    if (strcmp(data->filepath, "/") == 0) {
+        strcpy(data->filepath, "index.html");
+    } else {
+        char *path = data->filepath;
+        strcpy (data->filepath, path + 1);
+    }
 }
 
 void fof(int socket) {
@@ -148,62 +244,39 @@ void send_html(char *path, int socket) {
     close(socket);
 }
 
-void parse_request(char *request, struct RequestData *data) {
-    if (strstr(request, "GET /")) {
-        strcpy(data->method, "GET");
-    } else if (strstr(request, "POST")) {
-        strcpy(data->method, "POST");
-    } else {
-        strcpy(data->method, "UNKNOWN");
-    }
-
-    string_find_path(request, data->filepath);
-    
-    
-    if (strstr(data->filepath, ".mp4")) {
-        strcpy(data->filetype, ".mp4");
-    } else if (strstr(data->filepath, ".mkv")) {
-        strcpy(data->filetype, ".mkv");
-    } else if (strstr(data->filepath, ".html") || strstr(request, "GET / ")) {
-        strcpy(data->filetype, ".html");
-    } else if (!strstr(data->filepath, ".") && !strstr(data->filepath, "=")) {
-        strcpy(data->filetype, "folder");
-    } else if (strstr(data->filepath, "=")) {
-        strcpy(data->filetype, "function");
-    } else {
-        strcpy(data->filetype, "unknown");
-    }
-
-    extract_parameters(data->filepath, data->search, data->catagory, data->sort);
-    if (strcmp(data->filepath, "/") == 0) {
-        strcpy(data->filepath, "index.html");
-    } else {
-        char *path = data->filepath;
-        strcpy (data->filepath, path + 1);
-    }
-}
-
 void *client(void *new_socket) {
     int socket = *(int *)new_socket;
     char buffer[BUFFER] = {0};
+    struct RequestData request = {{0}, {0}, {0}, {0}, {0}, {0}};
+
     read(socket, buffer, BUFFER);
     printf("\n------------REQUEST--------\n\n%s\n-----------------------\n", buffer);
-    struct RequestData request = {{0}, {0}, {0}, {0}, {0}, {0}};
+    
     parse_request(buffer, &request);
+    
     if (request.search[0]) {
         printf("Client is searching for %s in the catagory of %s. Sorting bias: %s\n", request.search, request.catagory, request.sort);
+        
+        //char directories[24][32];
+        //get_directories(directories);
     } else {
         printf("Client request file %s via %s of type %s\n", request.method, request.filepath, request.filetype);
+        
+        if (strcmp(request.filetype, ".html") == 0) {
+            printf("Request is html, sending %s\n", request.filepath);
+            send_html(request.filepath, socket);
+        }
     }
-    if (strcmp(request.filetype, ".html") == 0) {
-        printf("Request is html, sending %s\n", request.filepath);
-        send_html(request.filepath, socket);
-    }
+    
     printf("Client disconnected\n");
     return NULL;
 }
 
 int main(void) {
+    char files[MEDIA_AMNT][MEDIA_LENGTH] = {0};
+    char directories[DIR_AMNT][DIR_LENGTH] = {0};
+    get_directories(directories);
+    get_files(directories, files);
     printf("Root directory: %s\nListening port: %d\n", ROOT, PORT);
     pthread_t thread;
     int client_socket, server;
