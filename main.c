@@ -12,8 +12,10 @@
 #define PORT 8080
 #define BUFFER 4096
 
+#define PAGE_SIZE 32512
+
 #define DIR_AMNT 24
-#define DIR_LENGTH 32
+#define DIR_LENGTH 312
 
 
 #define MEDIA_AMNT 8128
@@ -31,22 +33,81 @@ struct RequestData {
     char sort[16];
 };
 
-void get_files(char directories[DIR_AMNT][DIR_LENGTH], char files[MEDIA_AMNT][MEDIA_LENGTH]) {
-    struct dirent *entry;
-    int count = 0;
-    DIR *media;
-    for (i < 0; directories[i][0] != 0; i++) {
-        *media = opendir(directories[i])
-        while ((entry = readdir(media)) != NULL) {
-            strcpy(files[count], entry->d_name);
+int count_backslash(char *string) {
+    int count = 1;
+    for (int i = 0; string[i] != '\0'; i++) {
+        if (string[i] == '/') {
             count++;
         }
     }
-    printf("Read %d files\n", count);
+    return count;
+}
+
+char *isolate_filename(char *name) {
+    int count = count_backslash(name);
+    int i = 0;
+    for (i = 0; count > 1; i++) {
+        if (name[i] == '/') {
+            count--;
+        }
+    }
+    return name + i;
+}
+
+void search(char *search, char files[MEDIA_AMNT][MEDIA_LENGTH], char result[PAGE_SIZE]) {
+    printf("Searching...\n");
+    
+    char *page_start = 
+    "<!DOCTYPE html><html lang='en'>\n"
+    "<body style='background-color:black;'>\n"
+    "<h1 style='color:white';><a style='color:white'; href='/'>Streamer</a></h1>\n";
+    strcpy(result, page_start);
+    for (int i = 0; files[i][0] != 0; i++) {
+        if (strstr(files[i], search)) {
+            strcat(result, "<p style='color:white';><a style='color:white'; href='");
+            strcat(result, files[i]);
+            strcat(result, "'>");
+            strcat(result, isolate_filename(files[i]));
+            strcat(result, "</a></p>\n");
+        }
+    }
+
+    char *page_end =
+    "</body>\n"
+    "</html>";
+
+    strcat(result, page_end);
+
+}
+
+void get_files(char directories[DIR_AMNT][DIR_LENGTH], char files[MEDIA_AMNT][MEDIA_LENGTH]) {
+    struct dirent *entry;
+    int count = 0;
+    printf("Getting media content\n");
+    
+
+    char buffer[MEDIA_LENGTH];
+    for (int i = 0; directories[i][0] != 0; i++) {
+        DIR *media = opendir(directories[i]);
+        while ((entry = readdir(media)) != NULL) {
+            if (entry->d_name[0] != '.') {
+                snprintf(buffer, sizeof(buffer), "%s/%s", directories[i], entry->d_name);
+                strcpy(files[count], buffer);
+                count++;
+            }
+        }
+    }
+    printf("Counted %d media\n", count);
+
+    printf("\n(DEBUG - disable later!!) Verifying content of listed media\n\n");
+    for (int j = 0; j < count; j++) {
+        printf("%d. %s\n", j, files[j]);
+    }
+
 }
 
 void get_directories(char directories[DIR_AMNT][DIR_LENGTH]) {
-    printf("Listing directories\n");
+    printf("Getting directories\n");
     struct dirent *mov_entry;
     struct dirent *tv_entry;
     
@@ -54,26 +115,29 @@ void get_directories(char directories[DIR_AMNT][DIR_LENGTH]) {
     DIR *tv = opendir("./media/tv");
     
     if (!tv) {
-        printf("Couldnt find directory\n");
+        printf("Couldnt find directory ./media/tv\n");
     }
     if (!movies) {
-        printf("Couldnt find directory\n");
+        printf("Couldnt find directory ./media/movies\n");
     }
     int i = 0;
+    char buffer[DIR_LENGTH];
     while ((mov_entry = readdir(movies)) != NULL) {
         if (mov_entry->d_name[0] != '.') {
-            strcpy(directories[i], mov_entry->d_name);
+            snprintf(buffer, sizeof(buffer), "./media/movies/%s", mov_entry->d_name);
+            strcpy(directories[i], buffer);
             i++;
         }
     }
     while ((tv_entry = readdir(tv)) != NULL) {
         if (tv_entry->d_name[0] != '.') {
-            strcpy(directories[i], tv_entry->d_name);
+            snprintf(buffer, sizeof(buffer), "./media/tv/%s", tv_entry->d_name);
+            strcpy(directories[i], buffer);
             i++;
         }
     }
     
-    printf("Verifying content of listed directories\n");
+    printf("\n(DEBUG - disable later!!) Verifying content of listed directories\n\n");
     for (int j = 0; j < i; j++) {
         printf("%d. %s\n", j, directories[j]);
     }
@@ -275,8 +339,14 @@ void *client(void *new_socket) {
 int main(void) {
     char files[MEDIA_AMNT][MEDIA_LENGTH] = {0};
     char directories[DIR_AMNT][DIR_LENGTH] = {0};
+    char page[PAGE_SIZE] = {0};
+    
     get_directories(directories);
     get_files(directories, files);
+    search("in", files, page);
+    
+    printf("\n(DEBUG - disable later!!) Verifying content of created html page\n\n%s\n\n", page);
+
     printf("Root directory: %s\nListening port: %d\n", ROOT, PORT);
     pthread_t thread;
     int client_socket, server;
