@@ -442,10 +442,15 @@ void *client(void *new_socket) {
     struct RequestData request = {{0}, {0}, {0}, {0}, {0}, {0}};
 
     read(socket, buffer, BUFFER);
+    if (strstr(buffer, "favicon.ico")) {
+        printf("Rejecting favicon request\n");
+        close(socket);
+        return NULL;
+    }
     printf("\n------------REQUEST--------\n\n%s\n-----------------------\n", buffer);
     
     parse_request(buffer, &request);
-
+    
     if (request.search[0]) {
         printf("Client is searching for %s in the catagory of %s with a sorting criteria of: %s\n", request.search, request.catagory, request.sort);
         
