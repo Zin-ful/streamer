@@ -443,9 +443,7 @@ void *client(void *new_socket) {
 
     read(socket, buffer, BUFFER);
     if (strstr(buffer, "favicon.ico")) {
-        printf("Rejecting favicon request\n");
-        close(socket);
-        return NULL;
+        printf("Sending fake favicon to satify dumb browsers\n");
     }
     printf("\n------------REQUEST--------\n\n%s\n-----------------------\n", buffer);
     
