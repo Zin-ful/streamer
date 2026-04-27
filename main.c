@@ -18,7 +18,7 @@
 #define DIR_LENGTH 312
 
 
-#define MEDIA_AMNT 8128
+#define MEDIA_AMNT 4096
 #define MEDIA_LENGTH 512
 
 
@@ -32,10 +32,6 @@ struct RequestData {
     char catagory[18];
     char sort[16];
 };
-
-void send_video(int socket, char *path) {
-    printf("Preparing video\n");
-}
 
 int count_backslash(char *string) {
     int count = 1;
@@ -67,10 +63,25 @@ int count_char(char *string) {
 void search(char *search, char files[MEDIA_AMNT][MEDIA_LENGTH], char result[PAGE_SIZE]) {
     printf("Searching...\n");
     
-    char *page_start = 
+    char page_start[BUFFER];
+
+    snprintf(page_start, sizeof(page_start),
     "<!DOCTYPE html><html lang='en'>\n"
     "<body style='background-color:black;'>\n"
-    "<h1 style='color:white';><a style='color:white'; href='/'>Streamer</a></h1>\n";
+    "<html>\n<head><title>Searching for: %s</title></head>\n"
+    "<h1 style='color:white';><a style='color:white'; href='/'>Streamer</a></h1>\n"
+    "<form>\n"
+    "   <label style='color:white;'>Search for:</label>\n"
+    "       <input type='search' id='site-search' name='search' placeholder='def not pirated'><br>\n"
+    "    <input type='radio' id='tv' name='choice' value='movies'>\n"
+    "       <label style='color:white;' for='option2'>Movies</label>\n"
+    "    <input type='radio' id='movie' name='choice' value='tv'>\n"
+    "       <label style='color:white;' for='option1'>Television Series</label><br><br>\n"     
+    "    <button>Search</button>\n"
+    "</form><br>\n", search);
+
+
+
     strcpy(result, page_start);
     
     int len = count_char(result);
@@ -151,9 +162,9 @@ void get_directories(char directories[DIR_AMNT][DIR_LENGTH]) {
     closedir(tv);
 }
 
-void clear_buffer(char buffer[], int size) {
+void clear_buffer(char buffer[]) {
     int i;
-    for (i = 0; i != size; i++) {
+    for (i = 0; buffer[i] != '\0'; i++) {
         buffer[i] = 0;
     }
     printf("Set %d bytes to 0\n", i);
@@ -170,18 +181,32 @@ int string_find_position(char *string1, char *string2) {
 
 void string_find_path(char *string, char path[]) {
     int pos = string_find_position(string, "/");
-    int i = 0;
-    for (; string[pos] != ' '; pos++) {
+    int i;
+    for (i = 0; string[pos] != ' ' && string[pos] != '\0'; pos++) {
         path[i++] = string[pos];
     }
     path[i] = '\0';
 }
 
 
+char *verify_query(char *query) {
+    char *result = strstr(query, "?");
+    if (!result) {
+        return NULL;
+    }
+    int skip_value = result - query;
+    return query + skip_value;
+}
+
 void extract_parameters(char *parameters, char search[], char catagory[], char sort[]) {
     if (strlen(parameters) > 1) {
         if (parameters[1] != '?') {
-            return;
+            printf("failed first query check\n");
+            if ((parameters = verify_query(parameters))) {
+                printf("query verified: %s\n", parameters);
+            } else {
+                return;
+            }
         }
     } else {
         return;
@@ -254,10 +279,9 @@ void parse_request(char *request, struct RequestData *data) {
     } else {
         strcpy(data->method, "UNKNOWN");
     }
-
+    memset(data->filepath, 0, sizeof(data->filepath));
     string_find_path(request, data->filepath);
-    
-    
+        
     if (strstr(data->filepath, ".mp4")) {
         strcpy(data->filetype, ".mp4");
     } else if (strstr(data->filepath, ".mkv")) {
@@ -271,13 +295,14 @@ void parse_request(char *request, struct RequestData *data) {
     } else {
         strcpy(data->filetype, "unknown");
     }
-
     extract_parameters(data->filepath, data->search, data->catagory, data->sort);
+        
     if (strcmp(data->filepath, "/") == 0) {
         strcpy(data->filepath, "index.html");
     } else {
-        char *path = data->filepath;
-        strcpy (data->filepath, path + 1);
+        char temp[128];
+        strcpy(temp, data->filepath + 1);
+        strcpy(data->filepath, temp);
     }
 }
 
@@ -294,6 +319,100 @@ void fof(int socket) {
     send(socket, page, strlen(page), 0); 
     close(socket);
 }
+
+
+void send_custom_page(int socket, char *page) {
+    send(socket, html_header, strlen(html_header), 0);
+    send(socket, page, strlen(page), 0);
+    close(socket);    
+}
+
+
+void send_video(int socket, char *path, char *client_request) {
+    printf("Preparing video\n");
+
+    FILE *file = fopen(path, "rb");
+    if (!file) {
+        printf("File not found. Sending 404\n");
+        fof(socket);
+        return;
+    }
+    fseek(file, 0L, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0L, SEEK_SET);
+
+    long start = 0;
+    long end = size - 1;
+    char *range = strstr(client_request, "Range: bytes=");
+
+    char *type = strstr(path, ".mkv") ? "video/x-matroska" : "video/mp4"; //inline if statement
+    char video_header[BUFFER];
+        
+    if (range) {
+        range += 13;
+        sscanf(range, "%ld-%ld", &start, &end);
+        if (end <= 0 || end >= size) {
+            end = size - 1;
+        }
+        fseek(file, start, SEEK_SET);
+        
+        snprintf(video_header, sizeof(video_header),
+            "HTTP/1.1 206 Partial Content\r\n"
+            "Content-Type: %s\r\n"
+            "Accept-Ranges: bytes\r\n"
+            "Content-Range: bytes %ld-%ld/%ld\r\n"
+            "Content-Length: %ld\r\n\r\n",
+            type, start, end, size, (end - start + 1));
+        send(socket, video_header, strlen(video_header), 0);
+
+    } else {
+        snprintf(video_header, sizeof(video_header), 
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: %s\r\n"
+            "Accept-Ranges: bytes"
+            "Content-Length: %ld"
+            "\r\n",
+            type, size);
+        char video_player[BUFFER];
+
+        snprintf(video_player, sizeof(video_player),
+            "<!DOCTYPE html>\n"
+            "<html>\n<head><title>Watching: %s</title></head>\n"
+            "<h1 style='color:white;'><a href='/' style='color:white;'>Streamer</a></h1><br><br>\n"
+            "<body style='background-color:black; color:white; text-align:center;'>\n"
+            "<form>\n"
+            "   <label style='color:white;'>Search for:</label>\n"
+            "       <input type='search' id='site-search' name='search' placeholder='def not pirated'><br>\n"
+            "    <input type='radio' id='tv' name='choice' value='movies'>\n"
+            "       <label style='color:white;' for='option2'>Movies</label>\n"
+            "    <input type='radio' id='movie' name='choice' value='tv'>\n"
+            "       <label style='color:white;' for='option1'>Television Series</label><br><br>\n"
+            "    <button>Search</button>\n"
+            "</form><br>\n"
+            "<h2>Watching %s</h2>\n"
+            "<video width='1280' height='720' controls preload='metadata'>\n"
+            "<source src='/%s' type='video/mp4'>\n"
+            "</video>\n</body></html>",
+            isolate_filename(path), isolate_filename(path), path);
+            send(socket, video_header, strlen(video_header), 0);
+            send_custom_page(socket, video_player);
+
+    }
+
+    char video_buffer[BUFFER];
+    long remaining_bytes = end - start + 1;
+
+    while (remaining_bytes > 0) {
+        int chunk = (remaining_bytes < BUFFER) ? remaining_bytes : BUFFER;
+        int bytes_read = fread(video_buffer, 1, chunk, file);
+        if (bytes_read <= 0) break;
+
+        if (send(socket, video_buffer, bytes_read, MSG_NOSIGNAL) <= 0) break;
+        remaining_bytes -= bytes_read;
+    }
+    fclose(file);
+}
+
 
 void send_page(char *path, int socket) {
     FILE *file = fopen(path, "r");
@@ -317,12 +436,6 @@ void send_page(char *path, int socket) {
     close(socket);
 }
 
-void send_custom_page(int socket, char *page) {
-    send(socket, html_header, strlen(html_header), 0);
-    send(socket, page, strlen(page), 0);
-    close(socket);    
-}
-
 void *client(void *new_socket) {
     int socket = *(int *)new_socket;
     char buffer[BUFFER] = {0};
@@ -332,13 +445,16 @@ void *client(void *new_socket) {
     printf("\n------------REQUEST--------\n\n%s\n-----------------------\n", buffer);
     
     parse_request(buffer, &request);
-    
+
     if (request.search[0]) {
         printf("Client is searching for %s in the catagory of %s with a sorting criteria of: %s\n", request.search, request.catagory, request.sort);
         
-        char files[MEDIA_AMNT][MEDIA_LENGTH] = {0};
-        char directories[DIR_AMNT][DIR_LENGTH] = {0};
-        char page[PAGE_SIZE] = {0};
+        char (*files)[MEDIA_LENGTH] = malloc(MEDIA_AMNT * MEDIA_LENGTH);
+        memset(files, 0, MEDIA_AMNT * MEDIA_LENGTH);
+        char (*directories)[DIR_LENGTH] = malloc(DIR_AMNT * DIR_LENGTH);
+        memset(directories, 0, DIR_AMNT * DIR_LENGTH);
+        char *page = malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
 
         get_directories(directories);
         get_files(directories, files);
@@ -346,14 +462,15 @@ void *client(void *new_socket) {
         
         send_custom_page(socket, page);
     } else {
+        
         printf("Client is requesting the file %s via the %s method with a filetype of %s\n", request.filepath, request.method, request.filetype);
         
         if (strcmp(request.filetype, ".html") == 0 || strcmp(request.filetype, ".txt") == 0) {
             printf("Request is for webpages, sending %s\n", request.filepath);
             send_page(request.filepath, socket);
-        } elif (strcmp(request.filetype, ".mp4") == 0 || strcmp(request.filetype, ".mkv") == 0){
+        } else if (strcmp(request.filetype, ".mp4") == 0 || strcmp(request.filetype, ".mkv") == 0) {
             printf("Request is for videos, sending %s\n", request.filepath);
-            send_video(socket, request.filepath);
+            send_video(socket, request.filepath, buffer);
         }
     }
     
