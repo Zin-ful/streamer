@@ -12,7 +12,7 @@
 #define PORT 8080
 #define BUFFER 4096
 
-#define PAGE_SIZE 32512
+#define PAGE_SIZE 55024
 
 #define DIR_AMNT 24
 #define DIR_LENGTH 312
@@ -396,6 +396,7 @@ void send_video(int socket, char *path, char *client_request) {
             isolate_filename(path), isolate_filename(path), path);
             send(socket, video_header, strlen(video_header), 0);
             send_custom_page(socket, video_player);
+            return;
 
     }
 
@@ -437,6 +438,7 @@ void send_page(char *path, int socket) {
 }
 
 void *client(void *new_socket) {
+    pthread_detach(pthread_self());
     int socket = *(int *)new_socket;
     char buffer[BUFFER] = {0};
     struct RequestData request = {{0}, {0}, {0}, {0}, {0}, {0}};
@@ -478,6 +480,7 @@ void *client(void *new_socket) {
     }
     
     printf("Client disconnected\n");
+    free(new_socket);
     return NULL;
 }
 
@@ -506,12 +509,11 @@ int main(void) {
         perror("Bind failed");
         exit(EXIT_FAILURE);
     }
-    while (1) {
-        if (listen(server, 3) < 0) {
-            perror("Listen failed");
-            exit(EXIT_FAILURE);
+    if (listen(server, 3) < 0) {
+        perror("Listen failed");
+        exit(EXIT_FAILURE);
         }
-        
+    while (1) {        
         client_socket = accept(server, (struct sockaddr*)&addr, &addrlen);
         if (client_socket < 0) {
             perror("Accept failed");
