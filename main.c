@@ -62,7 +62,20 @@ char* remove_extention(char *name) {
     return name;
 }
 
-void find_number(char *string, char new_string[BUFFER / 4]) {
+
+
+
+int check_for_file(char *string, char files[MEDIA_AMNT][MEDIA_LENGTH]) {
+    for (int i = 0; files[i][0] != 0; i++) {
+        printf("Checking: %s vs %s\n", files[i], string);
+        if (strstr(files[i], string)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void find_next_up(char *string, char new_string[BUFFER / 4], char files[MEDIA_AMNT][MEDIA_LENGTH]) {
     if (!strstr(string, "-")) {
         printf("No dash\n");
         strcpy(new_string, string);
@@ -76,8 +89,6 @@ void find_number(char *string, char new_string[BUFFER / 4]) {
     int i;
     int found = 0;
     
-    printf("Converting: %s\n", string);
-
     for (position = 0; string[position] != '-'; position++);
     position++;
     for (i = 0; numbers[i] != '\0'; i++) {
@@ -86,7 +97,6 @@ void find_number(char *string, char new_string[BUFFER / 4]) {
         }
     };
     if (!found) {
-        printf("Not found\n");
         strcpy(new_string, string);
         return;    
     }
@@ -111,13 +121,42 @@ void find_number(char *string, char new_string[BUFFER / 4]) {
     }
     
     converted_numbers[current_count - 1] += 1;
-    printf("%d\n", converted_numbers[current_count]);
-    for (i = current_count - 1; i >= 0; i--) {
+    printf("cc %d\n", current_count);
+    if (converted_numbers[current_count - 1] == 10 && current_count > 1) {
+        converted_numbers[current_count - 2] += 1;
+        converted_numbers[current_count - 1] = 0;
+        if (converted_numbers[current_count - 2] == 10) {
+            if (current_count < 3) {
+                current_count++;
+                converted_numbers[current_count - 3] = 1;
+            } else {
+                converted_numbers[current_count - 3] = converted_numbers[current_count - 3] + 1;
+            }
+            
+            converted_numbers[current_count - 2] = 0;
+            if (converted_numbers[current_count - 3] == 10) {
+                if (current_count < 4) {
+                    current_count++;
+                    converted_numbers[current_count - 4] = 1;
+                } else {
+                    converted_numbers[current_count - 4] = converted_numbers[current_count - 4] + 1;
+                }
+                converted_numbers[current_count - 3] = 0;
+            }
+        }
+    }
+    for (i = 0; i < current_count; i++) {
+        printf("%s\n", new_string);    
         char temp_string[2] = {0};
         sprintf(temp_string + strlen(temp_string), "%d", converted_numbers[i]);
         strcat(new_string, temp_string);
+        
     }
-    printf("New String %s\n", new_string);
+
+    if (!check_for_file(new_string, files)) {
+        strcpy(new_string, "No_more_episodes.html");
+    }
+    
 }
 
 int count_char(char *string) {
@@ -155,7 +194,7 @@ void search(char *search, char files[MEDIA_AMNT][MEDIA_LENGTH], char result[PAGE
     for (int i = 0; files[i][0] != 0; i++) {
         if (strstr(files[i], search) || search[0] == '*') {
             if (strcmp(files[i], "init") != 0) {
-                strcat(result, "<p style='color:white';><a style='color:white'; href='");
+                strcat(result, "<p style='color:white';><a style='color:white'; href='/");
                 strcat(result, files[i]);
                 strcat(result, "'>");
                 strcat(result, remove_extention(isolate(files[i], '/')));
@@ -446,8 +485,18 @@ void send_video(int socket, char *path, char *client_request, char *ext) {
         strcpy(copy_of_path, path);
         char next_up[BUFFER / 4];
 
-        find_number(copy_of_path, next_up);
+        char (*files)[MEDIA_LENGTH] = malloc(MEDIA_AMNT * MEDIA_LENGTH);
+        memset(files, 0, MEDIA_AMNT * MEDIA_LENGTH);
+        char (*directories)[DIR_LENGTH] = malloc(DIR_AMNT * DIR_LENGTH);
+        memset(directories, 0, DIR_AMNT * DIR_LENGTH);
 
+        get_directories(directories);
+        get_files(directories, files);
+
+        find_next_up(copy_of_path, next_up, files);
+        if (strstr(next_up, "No_more_episodes")) {
+            strcpy(ext, ".html");
+        }
         snprintf(video_player, sizeof(video_player),
             "<!DOCTYPE html>\n"
             "<html>\n<head><title>Watching: %s</title></head>\n"
@@ -466,10 +515,10 @@ void send_video(int socket, char *path, char *client_request, char *ext) {
             "<video width='1280' height='720' controls preload='metadata'>\n"
             "<source src='/%s' type='video/mp4'>\n"
             "</video>\n<br>"
-            "<p><a href=/%s>Next Episode: %s</a></p>"
+            "<p><a href=/%s%s>Next Episode: %s</a></p>"
             "<button name='watchparty' value='%s'>Start Watch Party</button>"
             "</body></html>",
-            isolate(path, '/'), isolate(path, '/'), path, strcat(next_up, ext), remove_extention(isolate(next_up, '/')), path);
+            isolate(path, '/'), isolate(path, '/'), path, next_up, ext, remove_extention(isolate(next_up, '/')), path);
             send(socket, video_header, strlen(video_header), 0);
             send_custom_page(socket, video_player);
             return;
