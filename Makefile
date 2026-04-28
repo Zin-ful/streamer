@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -pthread
+CFLAGS = -g -Wall -Wextra -O2 -pthread
 TARGET = main
 SOURCES = main.c
 OBJECTS = $(SOURCES:.c=.o)

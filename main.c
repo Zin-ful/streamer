@@ -33,25 +33,91 @@ struct RequestData {
     char sort[16];
 };
 
-int count_backslash(char *string) {
-    int count = 1;
-    for (int i = 0; string[i] != '\0'; i++) {
-        if (string[i] == '/') {
-            count++;
+int count(char *string1, char string2) {
+    int current_count = 1;
+    for (int i = 0; string1[i] != '\0'; i++) {
+        if (string1[i] == string2) {
+            current_count++;
         }
     }
-    return count;
+    return current_count;
 }
 
-char *isolate_filename(char *name) {
-    int count = count_backslash(name);
+char *isolate(char *name, char string) {
+    int current_count = count(name, string);
     int i = 0;
-    for (i = 0; count > 1; i++) {
-        if (name[i] == '/') {
-            count--;
+    for (i = 0; current_count > 1; i++) {
+        if (name[i] == string) {
+            current_count--;
         }
     }
     return name + i;
+}
+
+char* remove_extention(char *name) {
+    char *dot = strrchr(name, '.');
+    if (dot) {
+        *dot = '\0';
+    }
+    return name;
+}
+
+void find_number(char *string, char new_string[BUFFER / 4]) {
+    if (!strstr(string, "-")) {
+        printf("No dash\n");
+        strcpy(new_string, string);
+        return;
+    }
+    char numbers[11] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '\0'};    
+    char isolated_numbers[32];
+
+    int position;
+    int new_position = 0;
+    int i;
+    int found = 0;
+    
+    printf("Converting: %s\n", string);
+
+    for (position = 0; string[position] != '-'; position++);
+    position++;
+    for (i = 0; numbers[i] != '\0'; i++) {
+        if (numbers[i] == string[position]) {
+            found = 1;
+        }
+    };
+    if (!found) {
+        printf("Not found\n");
+        strcpy(new_string, string);
+        return;    
+    }
+    for (i = position; string[i] != '\0'; i++) {
+        isolated_numbers[new_position++] = string[i];    
+    }
+    isolated_numbers[new_position] = '\0';
+
+    string[position] = '\0';
+    strcpy(new_string, string);
+    
+    int converted_numbers[5] = {0};
+    int current_count = 0;
+    for (int j = 0; isolated_numbers[j] != '\0' && isolated_numbers[j] != '.'; j++) {
+        for (i = 0; numbers[i] != '\0'; i++) {
+            if (numbers[i] == isolated_numbers[j]) {
+                converted_numbers[current_count] = i;
+                current_count++;
+                break;
+            }
+        }
+    }
+    
+    converted_numbers[current_count - 1] += 1;
+    printf("%d\n", converted_numbers[current_count]);
+    for (i = current_count - 1; i >= 0; i--) {
+        char temp_string[2] = {0};
+        sprintf(temp_string + strlen(temp_string), "%d", converted_numbers[i]);
+        strcat(new_string, temp_string);
+    }
+    printf("New String %s\n", new_string);
 }
 
 int count_char(char *string) {
@@ -88,11 +154,13 @@ void search(char *search, char files[MEDIA_AMNT][MEDIA_LENGTH], char result[PAGE
     
     for (int i = 0; files[i][0] != 0; i++) {
         if (strstr(files[i], search) || search[0] == '*') {
-            strcat(result, "<p style='color:white';><a style='color:white'; href='");
-            strcat(result, files[i]);
-            strcat(result, "'>");
-            strcat(result, isolate_filename(files[i]));
-            strcat(result, "</a></p>\n");
+            if (strcmp(files[i], "init") != 0) {
+                strcat(result, "<p style='color:white';><a style='color:white'; href='");
+                strcat(result, files[i]);
+                strcat(result, "'>");
+                strcat(result, remove_extention(isolate(files[i], '/')));
+                strcat(result, "</a></p>\n");
+            }
         }
     }
 
@@ -327,8 +395,7 @@ void send_custom_page(int socket, char *page) {
     close(socket);    
 }
 
-
-void send_video(int socket, char *path, char *client_request) {
+void send_video(int socket, char *path, char *client_request, char *ext) {
     printf("Preparing video\n");
 
     FILE *file = fopen(path, "rb");
@@ -373,7 +440,13 @@ void send_video(int socket, char *path, char *client_request) {
             "Content-Length: %ld"
             "\r\n",
             type, size);
+
         char video_player[BUFFER];
+        char copy_of_path[BUFFER / 4];
+        strcpy(copy_of_path, path);
+        char next_up[BUFFER / 4];
+
+        find_number(copy_of_path, next_up);
 
         snprintf(video_player, sizeof(video_player),
             "<!DOCTYPE html>\n"
@@ -392,8 +465,11 @@ void send_video(int socket, char *path, char *client_request) {
             "<h2>Watching %s</h2>\n"
             "<video width='1280' height='720' controls preload='metadata'>\n"
             "<source src='/%s' type='video/mp4'>\n"
-            "</video>\n</body></html>",
-            isolate_filename(path), isolate_filename(path), path);
+            "</video>\n<br>"
+            "<p><a href=/%s>Next Episode: %s</a></p>"
+            "<button name='watchparty' value='%s'>Start Watch Party</button>"
+            "</body></html>",
+            isolate(path, '/'), isolate(path, '/'), path, strcat(next_up, ext), remove_extention(isolate(next_up, '/')), path);
             send(socket, video_header, strlen(video_header), 0);
             send_custom_page(socket, video_player);
             return;
@@ -475,13 +551,13 @@ void *client(void *new_socket) {
             send_page(request.filepath, socket);
         } else if (strcmp(request.filetype, ".mp4") == 0 || strcmp(request.filetype, ".mkv") == 0) {
             printf("Request is for videos, sending %s\n", request.filepath);
-            send_video(socket, request.filepath, buffer);
+            send_video(socket, request.filepath, buffer, request.filetype);
         }
     }
     
     printf("Client disconnected\n");
     free(new_socket);
-    return NULL;
+    return NULL; //required by pthreads
 }
 
 int main(void) {
