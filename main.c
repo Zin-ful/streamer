@@ -305,6 +305,17 @@ char *verify_query(char *query) {
     return query + skip_value;
 }
 
+int get_len_up_to(char *string, char item) {
+    int i = 0;
+    for (; string[i] != item && string[i] != '\0'; i++) {
+        printf("check %c\n", string[i]);
+    }
+    if (i >= strlen(string)) {
+        return 0;
+    }
+    return i;
+}
+
 void extract_parameters(char *parameters, char search[], char catagory[], char sort[]) {
     if (strlen(parameters) > 1) {
         if (parameters[1] != '?') {
@@ -318,15 +329,21 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
     } else {
         return;
     }
+
+    int party = 0;
+
+    if (strstr(parameters, "watchparty")) party = 1;
+
     int amount = 1;
     int i;
+
     for (size_t i = 0; i < strlen(parameters) - 1; i++){
         if (parameters[i] == '&') {
             amount++;
         }
     }
     char *parameter = parameters;
-    i = 9;
+    i = get_len_up_to(parameter, '=') + 1;
     parameter = parameter + i;
     if (!parameter[0]) {
         search[0] = '*';
@@ -336,12 +353,13 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
         sort[0] = '*';
         sort[1] = '\0';
     } else {
-        
         for (i = 0; parameter[i] != '&' && parameter[i] != ' ' && parameter[i] != '\0'; i++){
             search[i] = parameter[i]; 
         }
         search[i] = '\0';
-        parameter = parameter + i + 8;
+        int first_len = 8;//get_len_up_to(parameter, '&');
+        printf("first len %d\n", first_len);
+        parameter = parameter + i + first_len;
         amount--;
         if (amount) {
             for (i = 0; parameter[i] != '&' && parameter[i] != ' ' && parameter[i] != '\0'; i++){
@@ -374,6 +392,9 @@ void extract_parameters(char *parameters, char search[], char catagory[], char s
             sort[0] = '*';
             sort[1] = '\0';
         }
+    }
+    if (party) {
+        strcpy(catagory, "watchparty");
     }
 }
 
@@ -512,11 +533,13 @@ void send_video(int socket, char *path, char *client_request, char *ext) {
             "    <button>Search</button>\n"
             "</form><br>\n"
             "<h2>Watching %s</h2>\n"
-            "<video width='1280' height='720' controls preload='metadata'>\n"
-            "<source src='/%s' type='video/mp4'>\n"
-            "</video>\n<br>"
+            "   <video width='1280' height='720' controls preload='metadata'>\n"
+            "       <source src='/%s' type='video/mp4'>\n"
+            "   </video>\n<br>"
             "<p><a href=/%s%s>Next Episode: %s</a></p>"
-            "<button name='watchparty' value='%s'>Start Watch Party</button>"
+            "<form method='GET' action=''>\n"
+            "   <button name='watchparty' value='%s'>Start Watch Party</button>\n"
+            "</form>\n"
             "</body></html>",
             isolate(path, '/'), isolate(path, '/'), path, next_up, ext, remove_extention(isolate(next_up, '/')), path);
             send(socket, video_header, strlen(video_header), 0);
